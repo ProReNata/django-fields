@@ -40,6 +40,13 @@ class BaseEncryptedField(models.Field):
     '''This code is based on the djangosnippet #1095
        You can find the original at http://www.djangosnippets.org/snippets/1095/'''
 
+    @property
+    def cipher_block_size(self):
+        if self.cipher.__class__.__name__ == 'EcbMode':
+            return 16  # Value from pycrypto, not defined in pycryptodome
+        else:
+            return self.cipher.block_size
+
     def __init__(self, *args, **kwargs):
         self.cipher_type = kwargs.pop('cipher', 'AES')
         self.block_type = kwargs.pop('block_type', None)
@@ -53,6 +60,12 @@ class BaseEncryptedField(models.Field):
                 "MODE_CBC). Please specify a secure block_type, such as CBC.",
                 DeprecationWarning,
             )
+        else:
+            raise ValueError(
+                "Explicit setting of block type is disabled due to lack of testing "
+                "(defaults to MODE_ECB)."
+            )
+
         try:
             imp = __import__('Crypto.Cipher', globals(), locals(), [self.cipher_type], -1)
         except:
@@ -66,7 +79,7 @@ class BaseEncryptedField(models.Field):
                 getattr(self.cipher_object, self.block_type),
                 self.iv)
         else:
-            self.cipher = self.cipher_object.new(self.secret_key)
+            self.cipher = self.cipher_object.new(self.secret_key, self.cipher_object.MODE_ECB)
             self.prefix = '$%s$' % self.cipher_type
 
         self.original_max_length = max_length = kwargs.get('max_length', 40)
@@ -74,9 +87,9 @@ class BaseEncryptedField(models.Field):
         # always add at least 2 to the max_length:
         #     one for the null byte, one for padding
         max_length += 2
-        mod = max_length % self.cipher.block_size
+        mod = max_length % self.cipher_block_size
         if mod > 0:
-            max_length += self.cipher.block_size - mod
+            max_length += self.cipher_block_size - mod
         if self.block_type:
             max_length += len(self.iv)
         kwargs['max_length'] = max_length * 2 + len(self.prefix)
@@ -94,8 +107,8 @@ class BaseEncryptedField(models.Field):
     def _get_padding(self, value):
         # We always want at least 2 chars of padding (including zero byte),
         # so we could have up to block_size + 1 chars.
-        mod = (len(value) + 2) % self.cipher.block_size
-        return self.cipher.block_size - mod + 2
+        mod = (len(value) + 2) % self.cipher_block_size
+        return self.cipher_block_size - mod + 2
 
     def from_db_value(self, value, expression, connection, context):
         if self._is_encrypted(value):

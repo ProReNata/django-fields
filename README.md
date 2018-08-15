@@ -1,3 +1,14 @@
+On this Fork
+------------
+
+Uses pycryptodome instead of pycrypto
+
+Setting of block_type is disabled and block_type defaults to MODE_ECB (would require more testing).
+
+Based on latest commit with Django 1.10 support 
+
+Nose & tox removed from dependencies
+
 Introduction
 ------------
 
